@@ -6,22 +6,21 @@ const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
 const PLAYLIST_FILE = path.join(__dirname, "data", "playlists.json");
 
 app.use(cors());
 app.use(express.json());
 
-// Serve static files
+// Static file hosting
 app.use("/audio", express.static(path.join(__dirname, "public", "audio")));
 app.use("/artwork", express.static(path.join(__dirname, "public", "artwork")));
 
-// Auth config
+// Admin credentials
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "yourSecurePassword";
 const AUTH_TOKEN = "secure-token-123";
 
-// Login route
+// Auth endpoint
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
@@ -30,7 +29,7 @@ app.post("/api/login", (req, res) => {
   return res.status(401).json({ error: "Invalid credentials" });
 });
 
-// Auth middleware for protected routes
+// Middleware for protected routes
 const requireAuth = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (token === AUTH_TOKEN) {
@@ -46,7 +45,7 @@ app.get("/api/all-playlists", (req, res) => {
   res.json(playlists);
 });
 
-// Save or update a playlist
+// Update playlist
 app.post("/api/update-playlist", requireAuth, (req, res) => {
   const { id, name, tracks, published } = req.body;
 
@@ -60,7 +59,7 @@ app.post("/api/update-playlist", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-// Delete a playlist
+// Delete playlist
 app.delete("/api/delete-playlist/:id", requireAuth, (req, res) => {
   const { id } = req.params;
   const playlists = JSON.parse(fs.readFileSync(PLAYLIST_FILE));
@@ -74,18 +73,16 @@ app.delete("/api/delete-playlist/:id", requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
-// Upload artwork for a playlist
+// Artwork upload
 const artworkStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, "public", "artwork"));
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const playlistId = req.params.id;
-    cb(null, `${playlistId}${ext}`);
+    cb(null, `${req.params.id}${ext}`);
   },
 });
-
 const uploadArtwork = multer({ storage: artworkStorage });
 
 app.post(
@@ -93,8 +90,8 @@ app.post(
   requireAuth,
   uploadArtwork.single("artwork"),
   (req, res) => {
-    const { id } = req.params;
     const playlists = JSON.parse(fs.readFileSync(PLAYLIST_FILE));
+    const { id } = req.params;
 
     if (!playlists[id]) {
       return res.status(404).json({ error: "Playlist not found" });
@@ -106,11 +103,8 @@ app.post(
   }
 );
 
-
-// Serve static files from the Vite build
+// Serve frontend build
 app.use(express.static(path.join(__dirname, "client", "dist")));
-
-// Fallback for React Router (SPA)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "client", "dist", "index.html"));
 });
