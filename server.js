@@ -19,7 +19,7 @@ const artworkUpload = multer({ dest: "public/artwork/" });
 // ✅ Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public"));
+app.use(express.static("public")); // static public (audio, artwork)
 
 // ✅ Auth middleware
 function isAuthed(req, res, next) {
@@ -31,7 +31,7 @@ function isAuthed(req, res, next) {
   }
 }
 
-// ✅ Login route
+// ✅ Login
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
@@ -41,7 +41,7 @@ app.post("/api/login", (req, res) => {
   }
 });
 
-// ✅ Get all playlists
+// ✅ All playlists
 app.get("/api/all-playlists", (req, res) => {
   let playlists = {};
   if (fs.existsSync(PLAYLISTS_FILE)) {
@@ -50,7 +50,7 @@ app.get("/api/all-playlists", (req, res) => {
   res.json(playlists);
 });
 
-// ✅ Upload MP3s
+// ✅ Upload audio
 app.post("/api/upload-audio", isAuthed, audioUpload.array("files"), (req, res) => {
   if (!req.files) return res.status(400).json({ error: "No files uploaded" });
 
@@ -59,7 +59,6 @@ app.post("/api/upload-audio", isAuthed, audioUpload.array("files"), (req, res) =
     fs.renameSync(file.path, newPath);
   });
 
-  // 🔄 Update index.json
   const audioFiles = fs
     .readdirSync("public/audio")
     .filter((f) => f.endsWith(".mp3"));
@@ -103,7 +102,7 @@ app.post("/api/create-playlist", isAuthed, (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ Update existing playlist
+// ✅ Update playlist
 app.post("/api/update-playlist", isAuthed, (req, res) => {
   const { id, name, tracks, published, artwork } = req.body;
   if (!id || !tracks) return res.status(400).json({ error: "Invalid data" });
@@ -130,7 +129,7 @@ app.post("/api/delete-playlist/:id", isAuthed, (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ Delete individual track from playlist
+// ✅ Delete track
 app.post("/api/delete-track/:id", isAuthed, (req, res) => {
   const id = req.params.id;
   const { url } = req.body;
@@ -151,9 +150,10 @@ app.post("/api/delete-track/:id", isAuthed, (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ Fallback route
+// ✅ Serve React frontend
+app.use(express.static(path.join(__dirname, "client", "dist")));
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "client/dist/index.html"));
+  res.sendFile(path.join(__dirname, "client", "dist", "index.html"));
 });
 
 // ✅ Start server
