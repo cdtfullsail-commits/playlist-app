@@ -1,114 +1,162 @@
 const express = require("express");
-const fs = require("fs");
-const multer = require("multer");
-const path = require("path");
 const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-const PLAYLIST_FILE = path.join(__dirname, "data", "playlists.json");
+const PORT = process.env.PORT || 10000;
 
-app.use(cors());
-app.use(express.json());
-
-// Static file hosting
-app.use("/audio", express.static(path.join(__dirname, "public", "audio")));
-app.use("/artwork", express.static(path.join(__dirname, "public", "artwork")));
-
-// Admin credentials
+// ✅ Constants
+const AUTH_TOKEN = "secure-token-123";
 const ADMIN_USERNAME = "admin";
 const ADMIN_PASSWORD = "yourSecurePassword";
-const AUTH_TOKEN = "secure-token-123";
 
-// Auth endpoint
-app.post("/api/login", (req, res) => {
-  const { username, password } = req.body;
-  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    return res.json({ token: AUTH_TOKEN });
-  }
-  return res.status(401).json({ error: "Invalid credentials" });
-});
+const PLAYLISTS_FILE = path.join(__dirname, "data/playlists.json");
+const audioUpload = multer({ dest: "public/audio/" });
+const artworkUpload = multer({ dest: "public/artwork/" });
 
-// Middleware for protected routes
-const requireAuth = (req, res, next) => {
+// ✅ Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static("public"));
+
+// ✅ Auth middleware
+function isAuthed(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (token === AUTH_TOKEN) {
     next();
   } else {
-    res.status(403).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Unauthorized" });
   }
-};
+}
 
-// Get all playlists
+// ✅ Login route
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    res.json({ token: AUTH_TOKEN });
+  } else {
+    res.status(401).json({ error: "Invalid credentials" });
+  }
+});
+
+// ✅ Get all playlists
 app.get("/api/all-playlists", (req, res) => {
-  const playlists = JSON.parse(fs.readFileSync(PLAYLIST_FILE));
+  let playlists = {};
+  if (fs.existsSync(PLAYLISTS_FILE)) {
+    playlists = JSON.parse(fs.readFileSync(PLAYLISTS_FILE, "utf-8"));
+  }
   res.json(playlists);
 });
 
-// Update playlist
-app.post("/api/update-playlist", requireAuth, (req, res) => {
-  const { id, name, tracks, published } = req.body;
+// ✅ Upload MP3s
+app.post("/api/upload-audio", isAuthed, audioUpload.array("files"), (req, res) => {
+  if (!req.files) return res.status(400).json({ error: "No files uploaded" });
 
-  if (!id || !name || !Array.isArray(tracks)) {
+  req.files.forEach((file) => {
+    const newPath = path.join(file.destination, file.originalname);
+    fs.renameSync(file.path, newPath);
+  });
+
+  // 🔄 Update index.json
+  const audioFiles = fs
+    .readdirSync("public/audio")
+    .filter((f) => f.endsWith(".mp3"));
+  fs.writeFileSync("public/audio/index.json", JSON.stringify(audioFiles, null, 2));
+
+  res.json({ success: true });
+});
+
+// ✅ Upload artwork
+app.post("/api/upload-artwork/:id", isAuthed, artworkUpload.single("artwork"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const ext = path.extname(req.file.originalname);
+  const newName = `${req.params.id}${ext}`;
+  const newPath = path.join(req.file.destination, newName);
+
+  fs.renameSync(req.file.path, newPath);
+  res.json({ success: true, file: newName });
+});
+
+// ✅ Create playlist
+app.post("/api/create-playlist", isAuthed, (req, res) => {
+  const newPlaylist = req.body;
+  if (!newPlaylist || !newPlaylist.id || !newPlaylist.tracks) {
     return res.status(400).json({ error: "Invalid playlist data" });
   }
 
-  const playlists = JSON.parse(fs.readFileSync(PLAYLIST_FILE));
-  playlists[id] = { ...playlists[id], name, tracks, published };
-  fs.writeFileSync(PLAYLIST_FILE, JSON.stringify(playlists, null, 2));
-  res.json({ success: true });
-});
-
-// Delete playlist
-app.delete("/api/delete-playlist/:id", requireAuth, (req, res) => {
-  const { id } = req.params;
-  const playlists = JSON.parse(fs.readFileSync(PLAYLIST_FILE));
-
-  if (!playlists[id]) {
-    return res.status(404).json({ error: "Playlist not found" });
+  let playlists = {};
+  if (fs.existsSync(PLAYLISTS_FILE)) {
+    playlists = JSON.parse(fs.readFileSync(PLAYLISTS_FILE, "utf-8"));
   }
 
-  delete playlists[id];
-  fs.writeFileSync(PLAYLIST_FILE, JSON.stringify(playlists, null, 2));
+  playlists[newPlaylist.id] = {
+    name: newPlaylist.name,
+    published: newPlaylist.published,
+    tracks: newPlaylist.tracks,
+    artwork: newPlaylist.artwork || "",
+  };
+
+  fs.writeFileSync(PLAYLISTS_FILE, JSON.stringify(playlists, null, 2));
   res.json({ success: true });
 });
 
-// Artwork upload
-const artworkStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "public", "artwork"));
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${req.params.id}${ext}`);
-  },
+// ✅ Update existing playlist
+app.post("/api/update-playlist", isAuthed, (req, res) => {
+  const { id, name, tracks, published, artwork } = req.body;
+  if (!id || !tracks) return res.status(400).json({ error: "Invalid data" });
+
+  let playlists = {};
+  if (fs.existsSync(PLAYLISTS_FILE)) {
+    playlists = JSON.parse(fs.readFileSync(PLAYLISTS_FILE, "utf-8"));
+  }
+
+  playlists[id] = { name, tracks, published, artwork };
+  fs.writeFileSync(PLAYLISTS_FILE, JSON.stringify(playlists, null, 2));
+  res.json({ success: true });
 });
-const uploadArtwork = multer({ storage: artworkStorage });
 
-app.post(
-  "/api/upload-artwork/:id",
-  requireAuth,
-  uploadArtwork.single("artwork"),
-  (req, res) => {
-    const playlists = JSON.parse(fs.readFileSync(PLAYLIST_FILE));
-    const { id } = req.params;
+// ✅ Delete playlist
+app.post("/api/delete-playlist/:id", isAuthed, (req, res) => {
+  const id = req.params.id;
+  let playlists = {};
+  if (fs.existsSync(PLAYLISTS_FILE)) {
+    playlists = JSON.parse(fs.readFileSync(PLAYLISTS_FILE, "utf-8"));
+    delete playlists[id];
+    fs.writeFileSync(PLAYLISTS_FILE, JSON.stringify(playlists, null, 2));
+  }
+  res.json({ success: true });
+});
 
-    if (!playlists[id]) {
-      return res.status(404).json({ error: "Playlist not found" });
+// ✅ Delete individual track from playlist
+app.post("/api/delete-track/:id", isAuthed, (req, res) => {
+  const id = req.params.id;
+  const { url } = req.body;
+
+  if (!url) return res.status(400).json({ error: "No track url provided" });
+
+  let playlists = {};
+  if (fs.existsSync(PLAYLISTS_FILE)) {
+    playlists = JSON.parse(fs.readFileSync(PLAYLISTS_FILE, "utf-8"));
+    const playlist = playlists[id];
+    if (playlist) {
+      playlist.tracks = playlist.tracks.filter((t) => t.url !== url);
+      playlists[id] = playlist;
+      fs.writeFileSync(PLAYLISTS_FILE, JSON.stringify(playlists, null, 2));
     }
-
-    playlists[id].artwork = req.file.filename;
-    fs.writeFileSync(PLAYLIST_FILE, JSON.stringify(playlists, null, 2));
-    res.json({ success: true });
   }
-);
 
-// Serve frontend build
-app.use(express.static(path.join(__dirname, "client", "dist")));
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "client", "dist", "index.html"));
+  res.json({ success: true });
 });
 
+// ✅ Fallback route
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "client/dist/index.html"));
+});
+
+// ✅ Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
