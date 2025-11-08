@@ -106,7 +106,6 @@ app.post(
   }
 );
 
-const path = require("path");
 
 // Serve static files from the Vite build
 app.use(express.static(path.join(__dirname, "client", "dist")));
