@@ -1,15 +1,43 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import AdminUpload from './components/AdminUpload';
-import PlaylistView from './components/PlaylistView';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import AdminUpload from "./components/AdminUpload";
+import PlaylistView from "./components/PlaylistView";
+import PlaylistEditor from "./components/PlaylistEditor";
+import Login from "./components/Login";
+import { isLoggedIn } from "./auth";
+
+const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+  return isLoggedIn() ? children : <Navigate to="/login" />;
+};
 
 const App: React.FC = () => {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/admin" />} />
-      <Route path="/admin" element={<AdminUpload />} />
-      <Route path="/playlist" element={<PlaylistView />} />
-    </Routes>
+    <Router>
+      <Routes>
+        <Route path="/" element={<PlaylistView />} />
+        <Route path="/login" element={<Login />} />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminUpload />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/edit"
+          element={
+            <ProtectedRoute>
+              <PlaylistEditor />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Router>
   );
 };
 
