@@ -42,3 +42,13 @@ const App: React.FC = () => {
 };
 
 export default App;
+import AdminDashboard from './components/AdminDashboard';
+// ...
+<Route
+  path="/admin"
+  element={
+    <ProtectedRoute>
+      <AdminDashboard />
+    </ProtectedRoute>
+  }
+/>
